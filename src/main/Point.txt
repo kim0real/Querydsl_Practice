@@ -1,0 +1,6 @@
+- 테스트 성능 향상(Gradle 대신 Java로 바로 실행
+Settings - Build Tools - Gradle\Build and run using, Run tests using 모두 intellij IDEA로 변경
+
+- Lombok 세팅
+Settings - Plugins - Lombok 설치
+annotation processors - Enable annotation processing 체크
