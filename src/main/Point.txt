@@ -4,3 +4,35 @@ Settings - Build Tools - Gradle\Build and run using, Run tests using 모두 inte
 - Lombok 세팅
 Settings - Plugins - Lombok 설치
 annotation processors - Enable annotation processing 체크
+
+- 스프링부트 자동설정(엔티티 -> 컬럼)
+1. 카멜 케이스 -> 언더스코어
+2. . -> 언더스코어
+3. 대문자 -> 소문자
+
+- Q-Type 사용법
+1. QMember member = new QMember("m"); // 별칭 직접 지정
+2. QMember member = QMember.member;   // 기본 인스턴스 사용
+3. import static study.querydsl.entity.QMember.member; 선언 후
+Member findMember = jpaQueryFactory
+        .select(member)
+        .from(member)
+        .where(member.username.eq("member1"))
+        .fetchOne(); 꼴로 사용
+
+- QueryDSL 문법
+fetch() : 리스트 조회, 데이터없으면 빈 리스트 반환
+fetchOne() : 단 건 조회
+결과 없으면 null
+결과 둘 이상이면 com.querydsl.core.NonUniqueResultException
+fetchFirst() : limit(1).fetchOne()
+fetchResults() : 페이징 정보 포함, total count 쿼리 추가실행
+fetchCount() : count 쿼리로 변경해서 count 수 조회
+
+- 서브쿼리 한계
+JPQL 서브쿼리의 한계로 from절의 서브쿼리(인라인 뷰)는 제공하지 않는다.
+당연히 QueryDSL에서도 지원하지 않는다.
+from절 서브쿼리 해결방안
+1. 서브쿼리를 join으로 변경한다.(가능한 상황도 있고 불가능한 상황도 있다.)
+2. 애플리케이션에서 쿼리를 2번 분리해서 실행한다.
+3. nativeSQL을 사용한다.
