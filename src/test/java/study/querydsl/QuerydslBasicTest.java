@@ -2,6 +2,8 @@ package study.querydsl;
 
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
+import com.querydsl.core.types.ExpressionUtils;
+import com.querydsl.core.types.Projections;
 import com.querydsl.core.types.dsl.CaseBuilder;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.JPAExpressions;
@@ -12,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
+import study.querydsl.dto.MemberDto;
 import study.querydsl.entity.Member;
 import study.querydsl.entity.QMember;
 import study.querydsl.entity.QTeam;
@@ -477,6 +480,136 @@ public class QuerydslBasicTest {
         for (String s : result) {
             System.out.println("s = " + s);
         }
+    }
 
+    /**
+     * 프로젝션 대상이 하나 : 타입이 명확
+     */
+    @Test
+    public void simpleProjection() {
+        List<String> result = jpaQueryFactory
+                .select(member.username)
+                .from(member)
+                .fetch();
+
+        for (String s : result) {
+            System.out.println("s = " + s);
+        }
+    }
+
+    /**
+     * 프로젝션 대상이 둘 이상 : 튜플 또는 DTO로 조회
+     */
+    @Test
+    public void tupleProjection() {
+        List<Tuple> result = jpaQueryFactory
+                .select(member.username, member.age)
+                .from(member)
+                .fetch();
+
+        for (Tuple tuple : result) {
+            System.out.println("member.username = " + tuple.get(member.username));
+            System.out.println("member.age = " + tuple.get(member.age));
+        }
+
+    }
+
+    /**
+     * 순수 JPA에서 DTO 조회
+     * new 명령어를 사용해야하며 DTO의 package이름을 다 적어줘야해서 지저분함.
+     * 생성자 방식만 지원함
+     * 
+     * 반면에 QueryDSL는 DTO 조회 시
+     * 프로퍼티 접근
+     * 필드 직접접근
+     * 생성자 사용
+     * 3가지 방법 지원
+     */
+    @Test
+    public void findDtoByJQPL() {
+        List<MemberDto> result = em.createQuery("select new study.querydsl.dto.MemberDto(m.username, m.age) from Member m", MemberDto.class)
+                .getResultList();
+
+        for (MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
+    }
+
+    /**
+     * QueryDSL DTO 조회
+     * 1.프로퍼티 접근
+     */
+    @Test
+    public void findDtoByQuerydsl() {
+        List<MemberDto> result = jpaQueryFactory
+                .select(Projections.bean(MemberDto.class,
+                        member.username,
+                        member.age))
+                .from(member)
+                .fetch();
+
+        for (MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
+    }
+
+    /**
+     * QueryDSL DTO 조회
+     * 2.필드접근
+     */
+    @Test
+    public void findDtoByQuerydsl2() {
+        List<MemberDto> result = jpaQueryFactory
+                .select(Projections.fields(MemberDto.class,
+                        member.username,
+                        member.age))
+                .from(member)
+                .fetch();
+
+        for (MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
+    }
+
+    /**
+     * QueryDSL DTO 조회
+     * 3.생성자 사용
+     */
+    @Test
+    public void findDtoByQuerydsl3() {
+        List<MemberDto> result = jpaQueryFactory
+                .select(Projections.constructor(MemberDto.class,
+                        member.username,
+                        member.age))
+                .from(member)
+                .fetch();
+
+        for (MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
+    }
+
+    /**
+     * QueryDSL DTO 조회
+     * 필드 접근 시 필드의 변수명이 다를 경우
+     * 필드나 서브쿼리에 별칭을 이용한다.
+     */
+    @Test
+    public void findUserDto() {
+        QMember memberSub = new QMember("memberSub");
+
+        List<MemberDto> result = jpaQueryFactory
+                .select(Projections.constructor(MemberDto.class,
+                        member.username.as("name"), // 필드에 별칭 이용
+                        ExpressionUtils.as(JPAExpressions
+                                        .select(memberSub.age.max())
+                                        .from(memberSub), "age") // 서브쿼리에 별칭 이용
+                        ))
+                .from(member)
+                .fetch();
+
+        for (MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
     }
 }
