@@ -1,9 +1,12 @@
 package study.querydsl;
 
+import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
 import com.querydsl.core.types.ExpressionUtils;
+import com.querydsl.core.types.Predicate;
 import com.querydsl.core.types.Projections;
+import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.CaseBuilder;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.JPAExpressions;
@@ -13,8 +16,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.Commit;
 import org.springframework.transaction.annotation.Transactional;
 import study.querydsl.dto.MemberDto;
+import study.querydsl.dto.QMemberDto;
 import study.querydsl.entity.Member;
 import study.querydsl.entity.QMember;
 import study.querydsl.entity.QTeam;
@@ -610,6 +615,167 @@ public class QuerydslBasicTest {
 
         for (MemberDto memberDto : result) {
             System.out.println("memberDto = " + memberDto);
+        }
+    }
+
+    /**
+     * 생성자 사용 방식에서는 
+     * DTO의 생성자에 @QueryProjection을 지원해주는데
+     * 위와 다르게 문법 오류 시 컴파일 에러가 바로 나는 장점이 있다.
+     *
+     * 단점 : DTO가 QueryDSL에 의존성을 갖게 된다.
+     */
+    @Test
+    public void findDtoByQueryProjection() {
+        List<MemberDto> result = jpaQueryFactory
+                .select(new QMemberDto(member.username, member.age))
+                .from(member)
+                .fetch();
+
+        for (MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
+    }
+
+    /**
+     * 동적 쿼리
+     * 1. BooleanBuilder 사용
+     * 2. Where 다중 파라미터 사용 - 이 방법이 훨씬 깔끔하다.
+     * where 조건의 null은 무시된다.
+     */
+    @Test
+    public void dynamicQuery_BooleanBuilder() {
+        String usernameParam = "member1";
+        Integer ageParam = 10;
+
+        List<Member> result = searchMember1(usernameParam, ageParam);
+        assertThat(result.size()).isEqualTo(1);
+    }
+
+    private List<Member> searchMember1(String usernameCond, Integer ageCond) {
+        BooleanBuilder builder = new BooleanBuilder();
+        if (usernameCond != null) {
+            builder.and(member.username.eq(usernameCond));
+        }
+        if (ageCond != null) {
+            builder.and(member.age.eq(ageCond));
+        }
+
+        return jpaQueryFactory
+                .selectFrom(member)
+                .where(builder)
+                .fetch();
+    }
+
+    @Test
+    public void dynamicQuery_WhereParam() {
+        String username = "member1";
+        Integer age = 10;
+
+        List<Member> result = searchMember2(username, age);
+        assertThat(result.size()).isEqualTo(2);
+    }
+
+    private List<Member> searchMember2(String usernameCond, Integer ageCond) {
+        return jpaQueryFactory
+                .selectFrom(member)
+                // .where(usernameEq(usernameCond), ageEq(ageCond))
+                .where(isServicable(usernameCond, ageCond))
+                .fetch();
+    }
+
+    private BooleanExpression usernameEq(String usernameCond) {
+        return usernameCond == null ? null : member.username.eq(usernameCond);
+    }
+
+    private BooleanExpression ageEq(Integer ageCond) {
+        return ageCond == null ? null : member.age.eq(ageCond);
+    }
+
+    //광고 상태 inValid, 날짜가 IN : isServicable
+    private BooleanExpression isServicable(String usernameCond, Integer ageCond) {
+        return usernameEq(usernameCond).and(ageEq(ageCond));
+    }
+
+    /**
+     * 수정, 삭제 배치쿼리
+     * Bulk 연산
+     */
+    @Test
+    @Commit
+    public void bulkUpdate() {
+        // member1 = 10 -> 비회원
+        // member2 = 20 -> 비회원
+        // member3 = 30 -> 유지
+        // member4 = 40 -> 유지
+
+        /**
+         * 영속성 컨텍스트를 무시하고 DB에 바로 업데이트하므로
+         * 영속성 컨텍스트와 DB의 상태가 다르다
+         *
+         * 벌크 연산 후 select 연산을 할 경우 JPA는 DB의 정보를 가져오게 되는데
+         * 이 때 동일한 값이 영속성 컨텍스트에도 존재하면 JPA는 DB의 정보가 아닌
+         * 영속성 컨텍스트의 값을 읽어 수정되기 이전의 값이 조회된다.
+         *
+         * 이러한 현상을 방지하기 위해 벌크연산 후에는 바로 flush()하여
+         * 영속성 컨텍스트의 값들을 DB로 다 보내고
+         * clear()하여 영속성 컨텍스트의 값들을 초기화(DB의 값을 읽어오는 것)한다.
+         */
+        long count = jpaQueryFactory
+                .update(member)
+                .set(member.username, "비회원")
+                .where(member.age.lt(28))
+                .execute();
+
+        em.flush();
+        em.clear();
+    }
+
+    @Test
+    public void bulkAdd() {
+        long count = jpaQueryFactory
+                .update(member)
+                .set(member.age, member.age.add(1)) // 마이너스 시 괄호에 음수
+                .execute();
+    }
+
+    @Test
+    public void bulkDelete() {
+        long count = jpaQueryFactory
+                .delete(member)
+                .where(member.age.gt(18))
+                .execute();
+    }
+
+    /**
+     * Function 호출
+     */
+    @Test
+    public void sqlFunction() {
+        List<String> result = jpaQueryFactory
+                .select(Expressions.stringTemplate(
+                        "function('replace', {0}, {1}, {2})",
+                        member.username, "member", "M"))
+                .from(member)
+                .fetch();
+
+        for (String s : result) {
+            System.out.println(" s = " + s);
+        }
+    }
+
+    @Test
+    public void sqlFunction2() {
+        List<String> result = jpaQueryFactory
+                .select(member.username)
+                .from(member)
+//                .where(member.username.eq(
+//                        Expressions.stringTemplate("function('lower', {0})", member.username)))
+                .where(member.username.eq(member.username.lower()))
+                .fetch();
+
+        for (String s : result) {
+            System.out.println("s = " + s);
         }
     }
 }
